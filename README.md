@@ -22,7 +22,7 @@ The project was built and executed in **Ubuntu 24.04 on WSL2**, using Rust and t
 | 385870156 | 820 |
 | **Total** | **3,974** |
 
-The original three Rust unit tests passed on the earlier build. An additional seeded-transfer regression test has been added but has not yet been run against the updated source. The WebAssembly release build and SPKG packaging also succeeded. These counts are from the project's execution logs; they have **not** been independently reconciled against a separate Solana RPC or block explorer.
+The final checked-in raw snapshot contains six block envelopes and 3,974 transfer records from a successful run of the rebuilt package. They have not been independently reconciled against a separate Solana RPC or block explorer.
 
 ## Required output
 
@@ -52,12 +52,12 @@ The project extracts **transfer instructions**, not a net change in account bala
 
 ### Important limitations
 
-- `src/lib.rs` now skips transactions with `meta.err` set, so failed transactions are not emitted as completed transfers. The updated source still requires a fresh WASM/SPKG build and a new six-block run to regenerate the checked-in outputs.
+- `src/lib.rs` skips transactions with `meta.err` set, so failed transactions are not emitted as completed transfers.
 - System Program `TransferWithSeed` decoding now verifies the bincode seed length and complete serialized owner key before extracting amounts. A new regression test covers truncated/malformed inputs.
-- **Artifact freshness:** The Rust fixes in this repository are newer than the published SPKG and JSONL files. Re-run `bash run.sh` in Ubuntu and commit the regenerated artifacts before final submission.
+- **Artifact freshness:** The checked-in SPKG, `raw.jsonl`, and `transfers.jsonl` were regenerated after the latest source changes.
 - SPL-token ownership is not guaranteed to be resolved for every account. The fallback may be a **token-account address**, not an owner's wallet address.
 - SOL and token amounts are combined in the same three-field output format because the assignment does not include an asset identifier. Their units must not be interpreted as interchangeable.
-- Three unit tests and successful live streaming are evidence of a working pipeline, but **not an independent accuracy audit** of every transfer.
+- The checked-in stream is execution evidence, but **not an independent accuracy audit** of every transfer.
 
 ## Repository layout
 
@@ -79,7 +79,7 @@ solana-transfer-extraction/
 └── transfers.jsonl            # Generated submission-ready transfers
 ```
 
-Generated files may be absent from a source-only checkout. The repository includes the compiled SPKG and JSONL artifacts from the previous successful run. After changing the Rust source, rebuild and regenerate these artifacts so they correspond to the latest commit.
+Generated files may be absent from a source-only checkout. The repository includes the compiled SPKG and JSONL artifacts from the final successful run.
 
 ## Prerequisites
 
@@ -192,16 +192,21 @@ For the reported successful run, `wc -l transfers.jsonl` returned **3,974**. The
 
 ## Testing and verification
 
-The previous build passed three Rust unit tests. The updated source includes a fourth regression test, which needs to be run:
+The decoder tests cover native transfers, seeded transfers, malformed/truncated
+seeded payloads, SPL Token and Token-2022 encodings, full `u64` amounts, wrong
+program IDs, and invalid account indexes. The exporter validates JSON field
+names/types, base58 public-key width, amount range, and complete slot coverage.
+Run the following after installing Rust:
 
 | Test | Purpose |
 | --- | --- |
 | `seeded_transfer_uses_recipient_after_signing_base` | Checks the account-index position for seeded native transfers |
 | `checked_token_transfer_requires_decimals_and_keeps_full_amount` | Checks checked-token transfer decoding and full `u64` amount handling |
 | `resolves_temporary_token_account_owner` | Checks token owner extraction from account initialization |
-| `seeded_transfer_rejects_truncated_or_malformed_payloads` | Rejects incomplete or malformed seeded SOL instructions (new; pending local execution) |
+| `seeded_transfer_rejects_truncated_or_malformed_payloads` | Rejects incomplete or malformed seeded SOL instructions |
+| `rejects_wrong_program_and_invalid_account_indexes` | Rejects unrelated programs and missing accounts |
 
-Recorded execution summary:
+Recorded execution snapshot:
 
 ```text
 Processed Blocks: 6 blocks

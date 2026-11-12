@@ -5,11 +5,21 @@ from pathlib import Path
 
 START_SLOT = 385870151
 END_SLOT = 385870156
-BASE58 = frozenset("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")
+BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+BASE58 = frozenset(BASE58_ALPHABET)
 
 
 def valid_address(value):
-    return isinstance(value, str) and 32 <= len(value) <= 44 and set(value) <= BASE58
+    if not isinstance(value, str) or not 32 <= len(value) <= 44 or not set(value) <= BASE58:
+        return False
+    # A Solana public key is exactly 32 bytes.  Length and alphabet checks
+    # alone accept strings that are not valid public keys.
+    decoded = 0
+    for character in value:
+        decoded = decoded * 58 + BASE58_ALPHABET.index(character)
+    decoded_bytes = (decoded.bit_length() + 7) // 8
+    leading_zero_bytes = len(value) - len(value.lstrip("1"))
+    return leading_zero_bytes + decoded_bytes == 32
 
 
 def export(source, destination):
@@ -46,7 +56,7 @@ def export(source, destination):
     with destination.open("w", encoding="utf-8", newline="\n") as output:
         for slot, rows in sorted(by_slot.items()):
             for row in rows:
-                output.write(json.dumps(row) + "\n")
+                output.write(json.dumps(row, separators=(",", ":")) + "\n")
             print(f"{slot}: {len(rows)} transfers", file=sys.stderr)
 
 

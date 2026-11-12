@@ -26,8 +26,18 @@ pub struct Instruction<'a> {
 }
 
 impl<'a> Instruction<'a> {
-    pub fn new(keys: &'a [&'a [u8]], program: u32, accounts: &'a [u8], data: &'a [u8]) -> Option<Self> {
-        Some(Self { keys, program: keys.get(program as usize)?, accounts, data })
+    pub fn new(
+        keys: &'a [&'a [u8]],
+        program: u32,
+        accounts: &'a [u8],
+        data: &'a [u8],
+    ) -> Option<Self> {
+        Some(Self {
+            keys,
+            program: keys.get(program as usize)?,
+            accounts,
+            data,
+        })
     }
 
     fn is_token(&self) -> bool {
@@ -44,9 +54,7 @@ impl<'a> Instruction<'a> {
                     // tag(u32), lamports(u64), seed_length(u64), seed, owner([u8; 32]).
                     // Reject truncated or malformed instructions rather than treating
                     // a partial payload as a successful native SOL transfer.
-                    let seed_len = u64::from_le_bytes(
-                        self.data.get(12..20)?.try_into().ok()?
-                    );
+                    let seed_len = u64::from_le_bytes(self.data.get(12..20)?.try_into().ok()?);
                     if seed_len > 32 {
                         return None;
                     }
@@ -60,8 +68,10 @@ impl<'a> Instruction<'a> {
             }
         } else if self.is_token() {
             match self.data.first()? {
-                3 => (TransferKind::Token, 1, 1),
-                12 if self.data.len() >= 10 => (TransferKind::Token, 2, 1),
+                // Transfer: discriminator + amount.
+                3 if self.data.len() == 9 => (TransferKind::Token, 1, 1),
+                // TransferChecked: discriminator + amount + decimals.
+                12 if self.data.len() == 10 => (TransferKind::Token, 2, 1),
                 _ => return None,
             }
         } else {
@@ -103,9 +113,15 @@ mod tests {
         data.extend_from_slice(b"seed");
         data.extend_from_slice(&[42_u8; 32]); // from_owner public key
         let ix = Instruction::new(&keys, 0, &[7, 8, 9], &data).unwrap();
-        assert_eq!(ix.transfer().unwrap(), DecodedTransfer {
-            kind: TransferKind::Native, source: 7, destination: 9, amount: 325253,
-        });
+        assert_eq!(
+            ix.transfer().unwrap(),
+            DecodedTransfer {
+                kind: TransferKind::Native,
+                source: 7,
+                destination: 9,
+                amount: 325253,
+            }
+        );
     }
 
     #[test]
@@ -120,18 +136,29 @@ mod tests {
 
         for length in [12, 19, 20, 23, 24, 55] {
             let ix = Instruction::new(&keys, 0, &[7, 8, 9], &data[..length]).unwrap();
-            assert!(ix.transfer().is_none(), "accepted truncated length {length}");
+            assert!(
+                ix.transfer().is_none(),
+                "accepted truncated length {length}"
+            );
         }
 
         let mut invalid_seed_length = data.clone();
         invalid_seed_length[12..20].copy_from_slice(&33_u64.to_le_bytes());
         assert!(Instruction::new(&keys, 0, &[7, 8, 9], &invalid_seed_length)
-            .unwrap().transfer().is_none());
+            .unwrap()
+            .transfer()
+            .is_none());
 
         assert!(Instruction::new(&keys, 0, &[7, 8], &data)
-            .unwrap().transfer().is_none());
-        assert!(Instruction::new(&keys, 0, &[7, 8, 9], &[data.as_slice(), &[0]].concat())
-            .unwrap().transfer().is_none());
+            .unwrap()
+            .transfer()
+            .is_none());
+        assert!(
+            Instruction::new(&keys, 0, &[7, 8, 9], &[data.as_slice(), &[0]].concat())
+                .unwrap()
+                .transfer()
+                .is_none()
+        );
     }
 
     #[test]
@@ -143,7 +170,60 @@ mod tests {
         let ix = Instruction::new(&keys, 0, &[4, 5, 6], &data).unwrap();
         let transfer = ix.transfer().unwrap();
         assert_eq!((transfer.destination, transfer.amount), (6, u64::MAX));
-        assert!(Instruction::new(&keys, 0, &[4, 5, 6], &data[..9]).unwrap().transfer().is_none());
+        assert!(Instruction::new(&keys, 0, &[4, 5, 6], &data[..9])
+            .unwrap()
+            .transfer()
+            .is_none());
+        let mut trailing = data.to_vec();
+        trailing.push(0);
+        assert!(Instruction::new(&keys, 0, &[4, 5, 6], &trailing)
+            .unwrap()
+            .transfer()
+            .is_none());
+
+        let mut unchecked = [0; 9];
+        unchecked[0] = 3;
+        unchecked[1..9].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert_eq!(
+            Instruction::new(&keys, 0, &[4, 5], &unchecked)
+                .unwrap()
+                .transfer()
+                .unwrap()
+                .amount,
+            u64::MAX
+        );
+        let mut unchecked_trailing = unchecked.to_vec();
+        unchecked_trailing.push(0);
+        assert!(Instruction::new(&keys, 0, &[4, 5], &unchecked_trailing)
+            .unwrap()
+            .transfer()
+            .is_none());
+    }
+
+    #[test]
+    fn rejects_wrong_program_and_invalid_account_indexes() {
+        let wrong_program = [1; 32];
+        let keys = [wrong_program.as_slice()];
+        assert!(
+            Instruction::new(&keys, 0, &[0, 1], &[2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+                .unwrap()
+                .transfer()
+                .is_none()
+        );
+
+        let keys = [SYSTEM.as_slice()];
+        assert!(
+            Instruction::new(&keys, 0, &[0], &[2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+                .unwrap()
+                .transfer()
+                .is_none()
+        );
+        assert!(
+            Instruction::new(&keys, 0, &[0, 1, 2], &[2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+                .unwrap()
+                .transfer()
+                .is_some()
+        );
     }
 
     #[test]
@@ -152,6 +232,9 @@ mod tests {
         let mut data = [7; 33];
         data[0] = 18;
         let ix = Instruction::new(&keys, 0, &[5], &data).unwrap();
-        assert_eq!(ix.initialized_owner(), Some((5, base58::encode(&data[1..]))));
+        assert_eq!(
+            ix.initialized_owner(),
+            Some((5, base58::encode(&data[1..])))
+        );
     }
 }
