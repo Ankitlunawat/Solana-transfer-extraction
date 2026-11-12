@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package assignment.solana.v1;
+
+message Transfers {
+  repeated Transfer transfers = 1;
+  uint64 slot = 2;
+}
+
+message Transfer {
+  string from = 1;
+  string to = 2;
+  uint64 amount = 3;
+}

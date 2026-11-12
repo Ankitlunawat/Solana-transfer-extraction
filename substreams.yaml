@@ -1,0 +1,25 @@
+specVersion: v0.1.0
+package:
+  name: solana_transfer_extraction
+  version: v0.1.0
+network: solana-mainnet-beta
+
+protobuf:
+  files:
+    - transfers.proto
+  importPaths:
+    - ./proto
+
+binaries:
+  default:
+    type: wasm/rust-v1
+    file: ./target/wasm32-unknown-unknown/release/solana_transfer_extraction.wasm
+
+modules:
+  - name: map_transfers
+    kind: map
+    initialBlock: 385870151
+    inputs:
+      - source: sf.solana.type.v1.Block
+    output:
+      type: proto:assignment.solana.v1.Transfers
