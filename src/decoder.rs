@@ -38,8 +38,24 @@ impl<'a> Instruction<'a> {
         let (kind, destination, offset) = if self.program == SYSTEM {
             let tag = u32::from_le_bytes(self.data.get(..4)?.try_into().ok()?);
             match tag {
-                2 => (TransferKind::Native, 1, 4),
-                11 => (TransferKind::Native, 2, 4),
+                2 if self.data.len() == 12 => (TransferKind::Native, 1, 4),
+                11 => {
+                    // Bincode SystemInstruction::TransferWithSeed:
+                    // tag(u32), lamports(u64), seed_length(u64), seed, owner([u8; 32]).
+                    // Reject truncated or malformed instructions rather than treating
+                    // a partial payload as a successful native SOL transfer.
+                    let seed_len = u64::from_le_bytes(
+                        self.data.get(12..20)?.try_into().ok()?
+                    );
+                    if seed_len > 32 {
+                        return None;
+                    }
+                    let total_len = 20usize.checked_add(seed_len as usize)?.checked_add(32)?;
+                    if self.data.len() != total_len || self.accounts.len() < 3 {
+                        return None;
+                    }
+                    (TransferKind::Native, 2, 4)
+                }
                 _ => return None,
             }
         } else if self.is_token() {
@@ -80,13 +96,42 @@ mod tests {
     #[test]
     fn seeded_transfer_uses_recipient_after_signing_base() {
         let keys = [SYSTEM.as_slice()];
-        let mut data = [0; 12];
-        data[..4].copy_from_slice(&11_u32.to_le_bytes());
-        data[4..].copy_from_slice(&325253_u64.to_le_bytes());
+        let mut data = Vec::new();
+        data.extend_from_slice(&11_u32.to_le_bytes());
+        data.extend_from_slice(&325253_u64.to_le_bytes());
+        data.extend_from_slice(&4_u64.to_le_bytes()); // bincode seed length
+        data.extend_from_slice(b"seed");
+        data.extend_from_slice(&[42_u8; 32]); // from_owner public key
         let ix = Instruction::new(&keys, 0, &[7, 8, 9], &data).unwrap();
         assert_eq!(ix.transfer().unwrap(), DecodedTransfer {
             kind: TransferKind::Native, source: 7, destination: 9, amount: 325253,
         });
+    }
+
+    #[test]
+    fn seeded_transfer_rejects_truncated_or_malformed_payloads() {
+        let keys = [SYSTEM.as_slice()];
+        let mut data = Vec::new();
+        data.extend_from_slice(&11_u32.to_le_bytes());
+        data.extend_from_slice(&325253_u64.to_le_bytes());
+        data.extend_from_slice(&4_u64.to_le_bytes());
+        data.extend_from_slice(b"seed");
+        data.extend_from_slice(&[42_u8; 32]);
+
+        for length in [12, 19, 20, 23, 24, 55] {
+            let ix = Instruction::new(&keys, 0, &[7, 8, 9], &data[..length]).unwrap();
+            assert!(ix.transfer().is_none(), "accepted truncated length {length}");
+        }
+
+        let mut invalid_seed_length = data.clone();
+        invalid_seed_length[12..20].copy_from_slice(&33_u64.to_le_bytes());
+        assert!(Instruction::new(&keys, 0, &[7, 8, 9], &invalid_seed_length)
+            .unwrap().transfer().is_none());
+
+        assert!(Instruction::new(&keys, 0, &[7, 8], &data)
+            .unwrap().transfer().is_none());
+        assert!(Instruction::new(&keys, 0, &[7, 8, 9], &[data.as_slice(), &[0]].concat())
+            .unwrap().transfer().is_none());
     }
 
     #[test]
