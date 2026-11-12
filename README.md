@@ -22,7 +22,7 @@ The project was built and executed in **Ubuntu 24.04 on WSL2**, using Rust and t
 | 385870156 | 820 |
 | **Total** | **3,974** |
 
-The three existing Rust unit tests passed. The WebAssembly release build and SPKG packaging also succeeded. These counts are from the project's execution logs; they have **not** been independently reconciled against a separate Solana RPC or block explorer.
+The original three Rust unit tests passed on the earlier build. An additional seeded-transfer regression test has been added but has not yet been run against the updated source. The WebAssembly release build and SPKG packaging also succeeded. These counts are from the project's execution logs; they have **not** been independently reconciled against a separate Solana RPC or block explorer.
 
 ## Required output
 
@@ -192,13 +192,14 @@ For the reported successful run, `wc -l transfers.jsonl` returned **3,974**. The
 
 ## Testing and verification
 
-Three Rust unit tests passed:
+The previous build passed three Rust unit tests. The updated source includes a fourth regression test, which needs to be run:
 
 | Test | Purpose |
 | --- | --- |
 | `seeded_transfer_uses_recipient_after_signing_base` | Checks the account-index position for seeded native transfers |
 | `checked_token_transfer_requires_decimals_and_keeps_full_amount` | Checks checked-token transfer decoding and full `u64` amount handling |
 | `resolves_temporary_token_account_owner` | Checks token owner extraction from account initialization |
+| `seeded_transfer_rejects_truncated_or_malformed_payloads` | Rejects incomplete or malformed seeded SOL instructions (new; pending local execution) |
 
 Recorded execution summary:
 
