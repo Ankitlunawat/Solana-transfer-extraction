@@ -52,7 +52,9 @@ The project extracts **transfer instructions**, not a net change in account bala
 
 ### Important limitations
 
-- The checked-in `src/lib.rs` version does **not explicitly reject transactions with failed execution status** (`meta.err`); confirm or implement that check before claiming that every emitted transfer executed successfully.
+- `src/lib.rs` now skips transactions with `meta.err` set, so failed transactions are not emitted as completed transfers. The updated source still requires a fresh WASM/SPKG build and a new six-block run to regenerate the checked-in outputs.
+- System Program `TransferWithSeed` decoding now verifies the bincode seed length and complete serialized owner key before extracting amounts. A new regression test covers truncated/malformed inputs.
+- **Artifact freshness:** The Rust fixes in this repository are newer than the published SPKG and JSONL files. Re-run `bash run.sh` in Ubuntu and commit the regenerated artifacts before final submission.
 - SPL-token ownership is not guaranteed to be resolved for every account. The fallback may be a **token-account address**, not an owner's wallet address.
 - SOL and token amounts are combined in the same three-field output format because the assignment does not include an asset identifier. Their units must not be interpreted as interchangeable.
 - Three unit tests and successful live streaming are evidence of a working pipeline, but **not an independent accuracy audit** of every transfer.
@@ -77,7 +79,7 @@ solana-transfer-extraction/
 └── transfers.jsonl            # Generated submission-ready transfers
 ```
 
-Generated files may be absent from a source-only checkout. The included `.gitignore` excludes SPKG and JSONL artifacts by default; attach those separately if the assignment submission requests them.
+Generated files may be absent from a source-only checkout. The repository includes the compiled SPKG and JSONL artifacts from the previous successful run. After changing the Rust source, rebuild and regenerate these artifacts so they correspond to the latest commit.
 
 ## Prerequisites
 
@@ -122,14 +124,14 @@ substreams pack substreams.yaml
 substreams info ./solana-transfer-extraction-v0.1.0.spkg
 ```
 
-Alternatively, with a **locally corrected** `run.sh`:
+Alternatively, using the checked-in `run.sh`:
 
 ```bash
 bash run.sh test
 bash run.sh build
 ```
 
-**Script compatibility note:** The original ZIP's `run.sh` uses `substreams pack substreams.yaml --output "$package"` and expects an underscore-named file. For the CLI version used in the successful run, remove `--output` and set `package=solana-transfer-extraction-v0.1.0.spkg` (hyphens). Otherwise, use the manual commands above.
+**Script compatibility:** The checked-in `run.sh` already uses the supported packaging command and the correct hyphenated SPKG filename.
 
 ## Authenticate and stream
 
