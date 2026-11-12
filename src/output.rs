@@ -16,4 +16,3 @@ pub struct Transfer {
     #[prost(uint64, tag = "3")]
     pub amount: u64,
 }
-
