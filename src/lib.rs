@@ -13,6 +13,10 @@ pub fn map_transfers(block: Block) -> Result<Transfers, Error> {
     let mut transfers = Vec::new();
     for tx in block.transactions() {
         let Some(meta) = &tx.meta else { continue };
+        // Instructions in a failed Solana transaction do not represent committed transfers.
+        if meta.err.is_some() {
+            continue;
+        }
         let Some(message) = tx.transaction.as_ref().and_then(|tx| tx.message.as_ref()) else {
             continue;
         };
